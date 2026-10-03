@@ -22,7 +22,19 @@ case "$(uname -s)" in Darwin) lms_os=darwin ;; Linux) lms_os=linux ;; *) fail 'U
 case "$(uname -m)" in arm64|aarch64) lms_arch=arm64 ;; x86_64|amd64) lms_arch=x64 ;; *) fail 'Unsupported CPU architecture.' ;; esac
 command -v tar >/dev/null 2>&1 || fail 'tar is required.'
 if command -v shasum >/dev/null 2>&1; then lms_hash=shasum; elif command -v sha256sum >/dev/null 2>&1; then lms_hash=sha256sum; else fail 'SHA-256 tool is required.'; fi
-lms_fetch() { curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 180 "$1" -o "$2"; }
+# lms_fetch begin
+# Resumable download. A transfer is abandoned only when it stays under 1 KB/s for 60 s, one attempt is capped at 30 minutes,
+# and up to five attempts continue from the bytes already written (-C -). A fixed 180 s total cannot finish the 176 MB
+# archive on a slow link. Only long-standing curl options are used, so older curl versions keep working.
+lms_fetch() {
+  lms_attempt=0
+  until curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --speed-limit 1024 --speed-time 60 --max-time 1800 -C - "$1" -o "$2"; do
+    lms_attempt=$((lms_attempt + 1))
+    [ "$lms_attempt" -lt 5 ] || return 1
+    sleep 3
+  done
+}
+# lms_fetch end
 # Latest stable tag from the headers of github.com/zs-andy/lms-cli/releases/latest. Unlike the REST API (60 anonymous requests per hour per IP) this does not fail on shared addresses; only an exact stable tag URL on this repository is accepted.
 lms_latest_tag() { tr -d '\r' | sed -n 's#^[Ll]ocation: https://github\.com/zs-andy/lms-cli/releases/tag/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$#\1#p' | head -n 1; }
 if [ -z "$lms_archive" ]; then

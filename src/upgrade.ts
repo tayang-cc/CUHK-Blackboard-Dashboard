@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { access, mkdir, mkdtemp, readFile, rename, rm } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { access, mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises';
 import { join, posix, resolve, parse } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import { spawn } from 'node:child_process';
@@ -43,45 +43,106 @@ export function safeArchiveEntry(path: string, type: string, linkpath = '') {
 }
 
 /**
- * A download fails when no bytes arrive for stallMs, or when it runs past totalMs. A fixed 180 s total used to abort
- * every large archive on slow links (176 MB at 0.5 MB/s needs about 6 minutes) and surfaced as an opaque INTERNAL error.
+ * Downloads are resumable. An attempt fails when no bytes arrive for stallMs or when the shared totalMs budget runs out
+ * (a fixed 180 s used to abort every large archive on slow links). A network reset, a stall or a 5xx answer is retried up
+ * to `attempts` times, continuing from the bytes already on disk with a Range request; if the server ignores or rejects
+ * the range the file is restarted from scratch. The SHA-256 of the complete file is still returned for verification.
  */
-export const DOWNLOAD_LIMITS = { stallMs: 60_000, totalMs: 30 * 60_000 };
+export const DOWNLOAD_LIMITS: { stallMs: number; totalMs: number; attempts?: number; retryDelayMs?: number } = { stallMs: 60_000, totalMs: 30 * 60_000, attempts: 5, retryDelayMs: 3000 };
 const MANUAL_DOWNLOAD_HINT = `也可以从发布页面手动下载安装包，核对 SHA256SUMS.txt 后离线安装：${RELEASES_URL}`;
 
-export async function download(url: string, file: string, maxBytes: number, limits = DOWNLOAD_LIMITS): Promise<string> {
-  let target = new URL(url);
-  if (target.origin !== 'https://github.com' || !target.pathname.startsWith('/zs-andy/lms-cli/releases/download/')) throw new LmsError('UPDATE_URL_INVALID', '更新下载地址不属于本项目，已拒绝。');
+/** A failure worth another attempt: network reset, stall, server error or a short body. Everything else is final. */
+class RetryableDownload extends Error { constructor(readonly kind: 'stalled' | 'network', message: string) { super(message); } }
+
+async function hashExisting(file: string, hash: ReturnType<typeof createHash>) {
+  await pipeline(createReadStream(file), async function* (chunks: AsyncIterable<Buffer>) { for await (const chunk of chunks) hash.update(chunk); });
+}
+
+function tooLong(limits: typeof DOWNLOAD_LIMITS) {
+  return new LmsError('UPDATE_DOWNLOAD_FAILED', `更新下载超过 ${Math.round(limits.totalMs / 60_000)} 分钟仍未完成。当前版本保持不变，可换更快的网络后重试。`, MANUAL_DOWNLOAD_HINT);
+}
+
+async function attemptDownload(start: URL, file: string, maxBytes: number, limits: typeof DOWNLOAD_LIMITS, budgetMs: number, first: boolean): Promise<string> {
+  // The first attempt must create the file; later attempts continue whatever the previous attempt left behind.
+  let existing = first ? undefined : (await stat(file).catch(() => undefined))?.size;
   const controller = new AbortController();
   let reason: 'stalled' | 'too-long' | undefined;
-  const total = setTimeout(() => { reason ??= 'too-long'; controller.abort(); }, limits.totalMs);
+  const total = setTimeout(() => { reason ??= 'too-long'; controller.abort(); }, budgetMs);
   let stall: NodeJS.Timeout | undefined;
   const progress = () => { clearTimeout(stall); stall = setTimeout(() => { reason ??= 'stalled'; controller.abort(); }, limits.stallMs); };
   progress();
   try {
+    let hash = createHash('sha256');
+    if (existing) await hashExisting(file, hash);
+    let target = start;
     for (let n = 0; n < 5; n++) {
       if (target.protocol !== 'https:' || target.username || target.password || target.port || !TRUSTED_RELEASE_HOSTS.includes(target.hostname)) throw new LmsError('UPDATE_URL_INVALID', '下载重定向不属于 GitHub 发布服务。');
-      const res = await fetch(target, { redirect: 'manual', signal: controller.signal, headers: { 'User-Agent': 'lms-cli-updater' } });
+      const headers: Record<string, string> = { 'User-Agent': 'lms-cli-updater' };
+      if (existing) headers.Range = `bytes=${existing}-`;
+      const res = await fetch(target, { redirect: 'manual', signal: controller.signal, headers });
       progress();
       if ([301, 302, 303, 307, 308].includes(res.status)) {
         const location = res.headers.get('location'); await res.body?.cancel();
         if (!location) throw new Error('Missing redirect'); target = new URL(location, target); continue;
       }
-      if (!res.ok || !res.body || Number(res.headers.get('content-length') || 0) > maxBytes) { await res.body?.cancel(); throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新下载失败或文件过大；当前版本保持不变。'); }
-      const hash = createHash('sha256'); let size = 0;
+      let flags = first ? 'wx' : existing === undefined ? 'wx' : 'a';
+      let expected: number | undefined;
+      if (res.status === 206 && existing) {
+        const range = /^bytes (\d+)-(\d+)\/(\d+|\*)$/.exec(res.headers.get('content-range') ?? '');
+        if (!range || Number(range[1]) !== existing) { await res.body?.cancel(); await rm(file, { force: true }); throw new RetryableDownload('network', 'Unexpected Content-Range'); }
+        expected = range[3] === '*' ? undefined : Number(range[3]);
+        if (expected !== undefined && expected > maxBytes) { await res.body?.cancel(); throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新下载失败或文件过大；当前版本保持不变。'); }
+      } else if (res.status === 416 && existing) {
+        await res.body?.cancel(); await rm(file, { force: true }); throw new RetryableDownload('network', 'Range not satisfiable');
+      } else if (res.status === 200) {
+        // A fresh download, or the server ignored the Range header: start the file over.
+        if (existing) { flags = 'w'; existing = 0; hash = createHash('sha256'); }
+        const length = Number(res.headers.get('content-length'));
+        expected = Number.isFinite(length) && res.headers.has('content-length') ? length : undefined;
+        if ((expected ?? 0) > maxBytes) { await res.body?.cancel(); throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新下载失败或文件过大；当前版本保持不变。'); }
+        // Content-Length counts encoded bytes; with a content-encoding the decoded size cannot be compared.
+        if (res.headers.get('content-encoding')) expected = undefined;
+      } else if (res.status >= 500 || res.status === 408 || res.status === 429) {
+        await res.body?.cancel(); throw new RetryableDownload('network', `HTTP ${res.status}`);
+      }
+      // Only a full 200 or a 206 answering our own Range request is a usable body; anything else (404, 204, an unrequested 206) is final.
+      if (!(res.status === 200 || (res.status === 206 && existing)) || !res.body) { await res.body?.cancel(); throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新下载失败或文件过大；当前版本保持不变。'); }
+      let size = existing ?? 0;
       const limit = new Transform({ transform(chunk, _encoding, cb) { progress(); size += chunk.length; if (size > maxBytes) cb(new Error('Download too large')); else { hash.update(chunk); cb(null, chunk); } } });
-      await pipeline(Readable.fromWeb(res.body as any), limit, createWriteStream(file, { flags: 'wx', mode: 0o600 }), { signal: controller.signal });
+      await pipeline(Readable.fromWeb(res.body as any), limit, createWriteStream(file, { flags, mode: 0o600 }), { signal: controller.signal });
+      if (expected !== undefined && size !== expected) throw new RetryableDownload('network', 'Short response body');
       return hash.digest('hex');
     }
     throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新下载重定向过多；当前版本保持不变。');
   } catch (error) {
-    if (error instanceof LmsError) throw error;
-    // Never pass a raw network/stream exception on: it would be reported as INTERNAL with no hint of what happened.
-    if (reason === 'stalled') throw new LmsError('UPDATE_DOWNLOAD_FAILED', `更新下载中断：连续 ${Math.round(limits.stallMs / 1000)} 秒没有收到数据。当前版本保持不变，网络恢复后可重新运行 lms update。`, MANUAL_DOWNLOAD_HINT);
-    if (reason === 'too-long') throw new LmsError('UPDATE_DOWNLOAD_FAILED', `更新下载超过 ${Math.round(limits.totalMs / 60_000)} 分钟仍未完成。当前版本保持不变，可换更快的网络后重试。`, MANUAL_DOWNLOAD_HINT);
+    if (error instanceof LmsError || error instanceof RetryableDownload) throw error;
+    // Never continue onto a file this download did not create itself.
+    if ((error as NodeJS.ErrnoException)?.code === 'EEXIST') throw new LmsError('UPDATE_DOWNLOAD_FAILED', '下载目标文件已存在，已拒绝覆盖；当前版本保持不变。');
     if (error instanceof Error && error.message === 'Download too large') throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新包超过大小上限，已拒绝；当前版本保持不变。');
-    throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新下载失败（网络中断或连接被重置）。当前版本保持不变，可稍后重新运行 lms update。', MANUAL_DOWNLOAD_HINT);
+    if (reason === 'too-long') throw tooLong(limits);
+    // Never pass a raw network/stream exception on: it would be reported as INTERNAL with no hint of what happened.
+    throw new RetryableDownload(reason === 'stalled' ? 'stalled' : 'network', error instanceof Error ? error.message : 'Download failed');
   } finally { clearTimeout(total); clearTimeout(stall); }
+}
+
+export async function download(url: string, file: string, maxBytes: number, limits = DOWNLOAD_LIMITS): Promise<string> {
+  const start = new URL(url);
+  if (start.origin !== 'https://github.com' || !start.pathname.startsWith('/zs-andy/lms-cli/releases/download/')) throw new LmsError('UPDATE_URL_INVALID', '更新下载地址不属于本项目，已拒绝。');
+  const attempts = limits.attempts ?? 5, delay = limits.retryDelayMs ?? 3000, deadline = Date.now() + limits.totalMs;
+  let failure: RetryableDownload | undefined;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw tooLong(limits);
+    try { return await attemptDownload(start, file, maxBytes, limits, remaining, attempt === 1); }
+    catch (error) {
+      if (!(error instanceof RetryableDownload)) throw error;
+      failure = error;
+      if (attempt < attempts) await new Promise(resolve => setTimeout(resolve, Math.min(delay, Math.max(0, deadline - Date.now()))));
+    }
+  }
+  const tries = `，已尝试 ${attempts} 次`;
+  if (failure?.kind === 'stalled') throw new LmsError('UPDATE_DOWNLOAD_FAILED', `更新下载中断：连续 ${Math.round(limits.stallMs / 1000)} 秒没有收到数据${tries}。当前版本保持不变，网络恢复后可重新运行 lms update。`, MANUAL_DOWNLOAD_HINT);
+  throw new LmsError('UPDATE_DOWNLOAD_FAILED', `更新下载失败（网络中断或连接被重置）${tries}。当前版本保持不变，可稍后重新运行 lms update。`, MANUAL_DOWNLOAD_HINT);
 }
 
 async function verifyBundle(directory: string, tag: string) {

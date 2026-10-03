@@ -50,7 +50,7 @@ test('a slow but steady download may outlast the stall limit without failing', a
 test('a download that stops receiving data is aborted with a clear, non-INTERNAL error', async t => {
   const file = await setup(t, () => new Response(body({ every: 10, silentAfter: 2 })));
   const started = Date.now();
-  const error = await failure(download(url, file, 1024 * 1024, { stallMs: 100, totalMs: 5000 }));
+  const error = await failure(download(url, file, 1024 * 1024, { stallMs: 100, totalMs: 5000, attempts: 2, retryDelayMs: 5 }));
   assert(Date.now() - started < 2000, 'aborted soon after the stall limit, not at the total limit');
   assert(error instanceof LmsError); assert.equal(error.code, 'UPDATE_DOWNLOAD_FAILED');
   assert.match(error.message, /没有收到数据/); assert.match(error.message, /当前版本保持不变/);
@@ -69,13 +69,13 @@ test('a download that keeps trickling is stopped by the total limit', async t =>
 test('a stall while waiting for the response headers is also aborted', async t => {
   // Like the real fetch, the pending request must reject when the abort signal fires.
   const file = await setup(t, (_target, signal) => new Promise<Response>((_resolve, reject) => signal?.addEventListener('abort', () => reject(new DOMException('This operation was aborted', 'AbortError')))));
-  const error = await failure(download(url, file, 1024, { stallMs: 100, totalMs: 5000 }));
-  assert(error instanceof LmsError); assert.match(error.message, /没有收到数据/);
+  const error = await failure(download(url, file, 1024, { stallMs: 100, totalMs: 5000, attempts: 2, retryDelayMs: 5 }));
+  assert(error instanceof LmsError); assert.match(error.message, /没有收到数据/); assert.match(error.message, /已尝试 2 次/);
 });
 
 test('network failures and oversized archives are reported as update download failures', async t => {
   const reset = await setup(t, () => { throw new TypeError('fetch failed'); });
-  const networkError = await failure(download(url, reset, 1024));
+  const networkError = await failure(download(url, reset, 1024, { stallMs: 1000, totalMs: 10_000, attempts: 2, retryDelayMs: 5 }));
   assert(networkError instanceof LmsError); assert.equal(networkError.code, 'UPDATE_DOWNLOAD_FAILED'); assert.match(networkError.message, /网络中断/);
   const big = await setup(t, () => new Response(body({ every: 5, chunks: 5, size: 1024 })));
   const tooBig = await failure(download(url, big, 2000));
@@ -98,6 +98,7 @@ test('redirect policy is unchanged: GitHub hosts are followed, anything else is 
 test('the production limits tolerate slow links', () => {
   assert.equal(DOWNLOAD_LIMITS.stallMs, 60_000);
   assert.equal(DOWNLOAD_LIMITS.totalMs, 30 * 60_000);
+  assert.equal(DOWNLOAD_LIMITS.attempts, 5);
   // 176 MB at 0.4 MB/s needs about 7.3 minutes: far beyond the old fixed 3 minutes, well within the new total.
   assert((176 / 0.4) * 1000 < DOWNLOAD_LIMITS.totalMs && (176 / 0.4) * 1000 > 180_000);
 });

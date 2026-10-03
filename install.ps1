@@ -9,6 +9,32 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Management\Microsoft.PowerShell.Management.psd1') -ErrorAction Stop
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# lms_latest_tag begin
+# Latest stable tag from the redirect of github.com/zs-andy/lms-cli/releases/latest. Unlike the REST API (60 anonymous requests
+# per hour per IP) this does not fail on shared addresses. Only an exact stable tag URL on this repository is accepted, and the
+# REST API below stays as a fallback. HttpClient with AllowAutoRedirect off behaves the same in Windows PowerShell 5.1 and 7.
+function Get-LmsTagFromLocation([string]$Location) {
+  if ($Location -match '^https://github\.com/zs-andy/lms-cli/releases/tag/(v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$') { return $Matches[1] }
+  return $null
+}
+function Get-LmsLatestTag {
+  try {
+    Add-Type -AssemblyName System.Net.Http
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    $handler.AllowAutoRedirect = $false
+    $client = New-Object System.Net.Http.HttpClient($handler)
+    $client.Timeout = [TimeSpan]::FromSeconds(20)
+    $client.DefaultRequestHeaders.UserAgent.ParseAdd('lms-cli-installer')
+    $request = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Head, 'https://github.com/zs-andy/lms-cli/releases/latest')
+    $response = $client.SendAsync($request).GetAwaiter().GetResult()
+    if ($response.Headers.Location) {
+      $resolved = New-Object System.Uri((New-Object System.Uri('https://github.com/zs-andy/lms-cli/releases/latest')), $response.Headers.Location)
+      return (Get-LmsTagFromLocation $resolved.AbsoluteUri)
+    }
+  } catch { }
+  return $null
+}
+# lms_latest_tag end
 $lmsRoot = [IO.Path]::GetFullPath($InstallDir)
 if ($lmsRoot -eq [IO.Path]::GetPathRoot($lmsRoot) -or $lmsRoot -eq [Environment]::GetFolderPath('UserProfile')) { throw 'Unsafe install directory.' }
 if ((Test-Path -LiteralPath $lmsRoot) -and ((Get-Item -LiteralPath $lmsRoot).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Install directory must not be a link.' }
@@ -16,9 +42,12 @@ $lmsArch = switch ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture.
 $lmsTar = Join-Path $env:SystemRoot 'System32\tar.exe'
 if (!(Test-Path -LiteralPath $lmsTar)) { throw 'Windows 10/11 tar.exe is required.' }
 if (!$Archive -and !$Version) {
-  $lmsRelease = Invoke-RestMethod -Uri 'https://api.github.com/repos/zs-andy/lms-cli/releases/latest' -Headers @{ 'User-Agent' = 'lms-cli-installer' } -TimeoutSec 20
-  if ($lmsRelease.draft -or $lmsRelease.prerelease) { throw 'No stable release available.' }
-  $Version = $lmsRelease.tag_name
+  $Version = Get-LmsLatestTag
+  if (!$Version) {
+    $lmsRelease = Invoke-RestMethod -Uri 'https://api.github.com/repos/zs-andy/lms-cli/releases/latest' -Headers @{ 'User-Agent' = 'lms-cli-installer' } -TimeoutSec 20
+    if ($lmsRelease.draft -or $lmsRelease.prerelease) { throw 'No stable release available.' }
+    $Version = $lmsRelease.tag_name
+  }
 }
 if ($Version -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') { throw 'Supply a valid stable release tag vX.Y.Z.' }
 if ($Archive -and (!(Test-Path -LiteralPath $Archive) -or !(Test-Path -LiteralPath $ChecksumFile))) { throw 'Offline installation requires an archive and checksum file.' }
