@@ -35,30 +35,32 @@ async function powershell(executable: string, body: string, locations: string[] 
 }
 const engines = ['powershell.exe', 'pwsh'];
 
-test('Get-LmsTagFromLocation accepts only an exact stable tag URL of this repository', windows, async () => {
+test('Get-LmsTagFromLocation accepts only an exact stable tag URL of this repository', windows, async t => {
   const valid = [`${RELEASE}/tag/v0.4.6`, `${RELEASE}/tag/v10.20.30`];
   const invalid = [`${RELEASE}/tag/v1.2.3-rc.1`, `${RELEASE}/tag/v1.2.3+build`, `${RELEASE}/tag/v1.2`, `${RELEASE}/tag/v01.2.3`, `${RELEASE}/tag/v1.2.3?x=1`, `${RELEASE}/tag/v1.2.3/extra`,
     RELEASE, `${RELEASE}/latest`, 'https://evil.example/zs-andy/lms-cli/releases/tag/v1.2.3', 'https://github.com/evil/lms-cli/releases/tag/v1.2.3',
     'http://github.com/zs-andy/lms-cli/releases/tag/v1.2.3', 'https://github.com.evil.example/zs-andy/lms-cli/releases/tag/v1.2.3', ''];
-  let ran = 0;
+  const used: string[] = [];
   for (const engine of engines) {
     const out = await powershell(engine, `$items = $env:LOCATIONS | ConvertFrom-Json\nforeach ($item in @($items)) { 'R:' + (Get-LmsTagFromLocation $item) }`, [...valid, ...invalid]);
-    if (!out) continue; ran++;
+    if (!out) continue; used.push(engine);
     assert.deepEqual(out, [...valid.map(location => `R:${location.split('/').pop()}`), ...invalid.map(() => 'R:')], engine);
   }
-  assert(ran >= 1, 'at least Windows PowerShell must be available');
+  t.diagnostic(`PowerShell engines used for the parser: ${used.join(', ')}`);
+  assert(used.length >= 1, 'at least Windows PowerShell must be available');
 });
 
-test('Get-LmsLatestTag resolves the real latest release in Windows PowerShell and PowerShell 7', windows, async () => {
-  let ran = 0;
+test('Get-LmsLatestTag resolves the real latest release in Windows PowerShell and PowerShell 7', windows, async t => {
+  const used: string[] = [];
   for (const engine of engines) {
     let tag = '';
     for (let attempt = 0; attempt < 3 && !/^v\d+\.\d+\.\d+$/.test(tag); attempt++) {
       const out = await powershell(engine, "'R:' + (Get-LmsLatestTag)");
-      if (!out) break; if (attempt === 0) ran++;
+      if (!out) break; if (attempt === 0) used.push(engine);
       tag = (out.find(line => line.startsWith('R:')) ?? '').slice(2);
     }
-    if (ran) assert.match(tag, /^v\d+\.\d+\.\d+$/, `${engine} should resolve a stable tag`);
+    if (used.includes(engine)) assert.match(tag, /^v\d+\.\d+\.\d+$/, `${engine} should resolve a stable tag`);
   }
-  assert(ran >= 1);
+  t.diagnostic(`PowerShell engines used for the live lookup: ${used.join(', ')}`);
+  assert(used.length >= 1);
 });
