@@ -1,6 +1,6 @@
 {
   "name": "lms-cli",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Multi-school Canvas / Blackboard CLI and Agent tools with read-only MCP and local sign-in",
   "type": "module",
   "license": "MIT",

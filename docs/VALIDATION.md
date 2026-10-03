@@ -1,5 +1,14 @@
 # Validation record — lms-cli
 
+## 0.4.3 release preflight (Claude Code plugin) — 2026-10-03
+
+Environment: macOS arm64, Node.js v25.7.0, fresh clone of `main` at the 0.4.2 release commit plus the Claude Code plugin commit. Version metadata is aligned across the package, lockfile, CLI, Codex plugin and Claude Code plugin. There are no runtime source changes compared with 0.4.2 apart from the version constant.
+
+- TypeScript check, build and **100 automated tests** passed; no failures or skipped tests. Three of them are new Claude Code plugin consistency tests (marketplace/plugin/package versions, the MCP command, and that the Codex plugin surface is unchanged). Production dependency audit reported **0 known vulnerabilities**.
+- `claude plugin validate` accepted both `.claude-plugin/marketplace.json` and `plugins/lms-cli-claude`. In an isolated Claude Code configuration directory the plugin installed from the repository marketplace as `lms-cli@lms-cli` 0.4.3 and its `lms mcp` server reported connected. No school account, credential or course data was used.
+- `npm pack --dry-run --ignore-scripts --json`: 101 entries, no vault data, profiles, environment files or dependency directory. The Claude Code plugin is distributed through the Git marketplace and is intentionally not in the npm tarball.
+- Not yet verified for this version: CI on the versioned commit, target-platform installers and checksums, macOS Developer ID signatures with accepted Apple notarization, and the Claude Code plugin against a real school account. This preflight record is not evidence that a Release is public.
+
 ## 0.4.2 release preflight — 2026-09-29
 
 Environment: macOS arm64, official checksum-verified Node.js v24.20.0 in an isolated build directory. Version metadata is aligned across the package, lockfile, CLI and plugin.
