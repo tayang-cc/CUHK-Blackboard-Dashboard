@@ -23,10 +23,13 @@ case "$(uname -m)" in arm64|aarch64) lms_arch=arm64 ;; x86_64|amd64) lms_arch=x6
 command -v tar >/dev/null 2>&1 || fail 'tar is required.'
 if command -v shasum >/dev/null 2>&1; then lms_hash=shasum; elif command -v sha256sum >/dev/null 2>&1; then lms_hash=sha256sum; else fail 'SHA-256 tool is required.'; fi
 lms_fetch() { curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 180 "$1" -o "$2"; }
+# Latest stable tag from the headers of github.com/zs-andy/lms-cli/releases/latest. Unlike the REST API (60 anonymous requests per hour per IP) this does not fail on shared addresses; only an exact stable tag URL on this repository is accepted.
+lms_latest_tag() { tr -d '\r' | sed -n 's#^[Ll]ocation: https://github\.com/zs-andy/lms-cli/releases/tag/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$#\1#p' | head -n 1; }
 if [ -z "$lms_archive" ]; then
   command -v curl >/dev/null 2>&1 || fail 'curl is required.'
   if [ -z "$lms_version" ]; then
-    lms_version=$(curl --fail --silent --show-error --proto '=https' --max-time 20 https://api.github.com/repos/zs-andy/lms-cli/releases/latest | sed -n 's/^[[:space:]]*"tag_name": "\(v[0-9][0-9.]*\)",*[[:space:]]*$/\1/p')
+    lms_version=$(curl --silent --head --proto '=https' --connect-timeout 15 --max-time 20 https://github.com/zs-andy/lms-cli/releases/latest 2>/dev/null | lms_latest_tag)
+    [ -n "$lms_version" ] || lms_version=$(curl --fail --silent --show-error --proto '=https' --max-time 20 https://api.github.com/repos/zs-andy/lms-cli/releases/latest | sed -n 's/^[[:space:]]*"tag_name": "\(v[0-9][0-9.]*\)",*[[:space:]]*$/\1/p')
   fi
 else
   [ -n "$lms_version" ] && [ -f "$lms_archive" ] && [ -f "$lms_sums" ] || fail 'Offline install requires an archive, checksum file and version.'

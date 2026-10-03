@@ -76,6 +76,8 @@ export const TRUSTED_RELEASE_HOSTS = ['github.com', 'release-assets.githubuserco
 const LATEST_URL = `${RELEASES_URL}/latest`;
 const LATEST_TAG_PATH = /^\/zs-andy\/lms-cli\/releases\/tag\/(v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/;
 const REDIRECTS = [301, 302, 303, 307, 308];
+/** A failure worth one more attempt: an unexpected status from github.com, as opposed to a validation failure. */
+class TransientLookupError extends Error {}
 const trusted = (url: URL) => url.protocol === 'https:' && !url.username && !url.password && !url.port && TRUSTED_RELEASE_HOSTS.includes(url.hostname);
 
 /**
@@ -98,7 +100,7 @@ export async function fetchLatestFromWeb(fetcher: typeof fetch = fetch, options:
   };
   const latest = await probe(LATEST_URL);
   const location = REDIRECTS.includes(latest.status) ? latest.headers.get('location') : null;
-  if (!location) throw new Error('Release check unavailable');
+  if (!location) throw new TransientLookupError('Release check unavailable');
   const target = new URL(location, LATEST_URL);
   if (!trusted(target) || target.hostname !== 'github.com' || target.search || target.hash) throw new Error('Unexpected release redirect');
   // With no stable release GitHub sends /releases/latest back to the release list.
@@ -109,7 +111,8 @@ export async function fetchLatestFromWeb(fetcher: typeof fetch = fetch, options:
   const present = await Promise.all(wanted.map(async name => {
     const url = `${RELEASES_URL}/download/${tag}/${name}`, response = await probe(url);
     if (response.status === 404) return undefined;
-    const next = REDIRECTS.includes(response.status) ? response.headers.get('location') : null;
+    if (!REDIRECTS.includes(response.status)) throw new TransientLookupError('Release check unavailable');
+    const next = response.headers.get('location');
     if (!next || !trusted(new URL(next, url))) throw new Error('Unexpected asset redirect');
     return name;
   }));
@@ -117,10 +120,20 @@ export async function fetchLatestFromWeb(fetcher: typeof fetch = fetch, options:
   return { tag_name: tag, draft: false, prerelease: false, assets } as unknown;
 }
 
+/**
+ * Network failures (a TypeError from fetch, e.g. a connection reset) and unexpected statuses are retried once on the
+ * web pages before the REST API is used; timeouts and validation failures are not, so a slow or hostile response
+ * never doubles the wait or the traffic.
+ */
+const transient = (error: unknown) => error instanceof TransientLookupError || error instanceof TypeError;
+
 /** Web pages first (no API quota); the REST endpoint is only a fallback when github.com pages are unreachable. */
 async function latestRelease(fetcher: typeof fetch | undefined, current: string) {
-  try { return await fetchLatestFromWeb(fetcher, { current }); }
-  catch { return fetchRelease(fetcher, 4000); }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try { return await fetchLatestFromWeb(fetcher, { current }); }
+    catch (error) { if (!transient(error)) break; }
+  }
+  return fetchRelease(fetcher, 4000);
 }
 
 export function inspectRelease(data: unknown, current = VERSION, platform = process.platform, arch = process.arch): UpdateInfo {

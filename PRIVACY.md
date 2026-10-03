@@ -20,7 +20,7 @@
 
 交互式 CLI 使用时和 MCP 会话首次读取配置时，会向固定的 GitHub 公开 Release 页面（github.com）检查版本，页面不可用时退回公开 Release API。请求使用通用 User-Agent，不包含学校、账号、课程或凭据；GitHub 可见正常连接信息。设置 `LMS_UPDATE_CHECK=0` 关闭自动检查，`lms update --check` 仍可主动检查。检查本身不会下载或执行更新。
 
-安装器及经确认的更新从项目 GitHub Release 下载程序和校验和，必要时经过 GitHub 的文件分发服务。开发者源码安装还会从 npm、Node.js 和 Electron 的分发来源获取依赖。
+安装器及经确认的更新从项目 GitHub Release 下载程序和校验和（未指定版本时，安装器会先读取 GitHub 最新版本页面确定版本），必要时经过 GitHub 的文件分发服务。开发者源码安装还会从 npm、Node.js 和 Electron 的分发来源获取依赖。
 
 `lms connect codex` 在本机生成插件副本和稳定的启动配置，其中包含程序与状态目录路径，不包含凭据。接入操作通过已安装的 Codex CLI 注册本地插件；替换已有同名插件需要单独确认。安装和更新不会自动设置定时任务或日历订阅。
 

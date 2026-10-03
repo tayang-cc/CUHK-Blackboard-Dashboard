@@ -1,5 +1,16 @@
 # Validation record — lms-cli
 
+## 0.4.5 release preflight (retry and quota-free installer lookup) — 2026-10-04
+
+Environment: macOS arm64, Node.js v25.7.0, fresh clone of `main` at the v0.4.4 release commit plus the changes below. Version metadata is aligned across the package, lockfile, CLI, Codex plugin and Claude Code plugin. Runtime changes: `src/updates.ts` (retry policy) and `install.sh` (latest-version lookup). `install.ps1` is unchanged.
+
+Motivation: on the test machine a direct Node `fetch` to the github.com release page failed once in twelve attempts with `ECONNRESET` (the other eleven succeeded, median 0.6 s), and one MCP update check in the 0.4.4 acceptance run fell back to the REST API after such a reset. Each fallback spends anonymous REST quota (60 per hour per IP) that shared addresses cannot spare. `install.sh` still asked the REST API for the latest version.
+
+- Update check: a network failure (a `TypeError` from fetch) or an unexpected status on the web pages is retried once before the REST fallback. Timeouts and validation failures (untrusted redirect hosts, foreign repositories, prerelease tags, query strings) are never retried. Four new tests cover the retry, the asset-probe retry, the two-failure fallback, and the no-retry cases; as mutation checks, limiting the loop to one attempt fails three tests and retrying every error fails the no-retry test.
+- `install.sh`: without `--version` the latest tag is read from the `Location` header of `github.com/zs-andy/lms-cli/releases/latest` by `lms_latest_tag`, which accepts only an exact `vX.Y.Z` tag URL on this repository over https; the previous REST lookup is kept as a fallback. Three new tests run the function from the script against HTTP/1.1 and HTTP/2 header shapes and fourteen rejected locations. Isolated end-to-end runs with a logging `curl` wrapper: (A) no `--version` resolved v0.4.4 through github.com only, installed and reported 0.4.4 with 0 requests to the REST API; (B) with the web lookup failing the script used the REST API and reached the v0.4.4 download; (C) with both lookups failing it stopped with the existing "No valid stable release found" error and installed nothing.
+- TypeScript check, build and **118 automated tests** passed; no failures or skipped tests. Production dependency audit reported **0 known vulnerabilities**. `npm pack --dry-run`: 103 entries.
+- Not verified for this version: `install.ps1` (unchanged and untested here), CI on the versioned commit, target-platform installers and checksums, and macOS Developer ID signatures with Apple notarization. This preflight record is not evidence that a Release is public.
+
 ## 0.4.4 release preflight (quota-free update check) — 2026-10-03
 
 Environment: macOS arm64, Node.js v25.7.0, fresh clone of `main` at the v0.4.3 release commit plus the update-check change. Version metadata is aligned across the package, lockfile, CLI, Codex plugin and Claude Code plugin. The runtime change is limited to `src/updates.ts` (release lookup) and `src/upgrade.ts` (the downloader now reads the same trusted-host list).
