@@ -50,7 +50,7 @@ export type UpdateInfo = {
 export async function fetchRelease(fetcher: typeof fetch = fetch) {
   const response = await fetcher(RELEASE_API, {
     headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'lms-cli-update-check' },
-    signal: AbortSignal.timeout(3500), redirect: 'error',
+    signal: AbortSignal.timeout(6000), redirect: 'error',
   });
   if (response.status === 404) return null;
   if (!response.ok || !response.body) throw new Error('Release check unavailable');
@@ -95,6 +95,20 @@ export async function checkForUpdates(options: { automatic?: boolean; fetcher?: 
   catch { return { ...base, status: 'unavailable', message: '暂时无法检查更新（网络、限流或发布信息不可用）。现有查询不受影响；可稍后运行 lms update --check 重试。' }; }
 }
 
-/** One request per MCP session, deferred until the first user call; never on the stdio protocol channel. */
+/**
+ * One request per MCP session, deferred until the first user call; never on the stdio protocol channel.
+ * A failed check is not cached for the whole session: a later call retries after UPDATE_RETRY_MS, so a
+ * single slow or rate-limited request cannot silence the update notice until the client restarts.
+ */
+export const UPDATE_RETRY_MS = 60_000;
 let sessionCheck: Promise<UpdateInfo> | undefined;
-export function sessionUpdate() { return sessionCheck ??= checkForUpdates({ automatic: true }); }
+let sessionFailedAt: number | undefined;
+export function resetSessionUpdate() { sessionCheck = undefined; sessionFailedAt = undefined; }
+export function sessionUpdate(options: { fetcher?: typeof fetch; now?: () => number } = {}): Promise<UpdateInfo> {
+  const now = (options.now ?? Date.now)();
+  if (sessionFailedAt !== undefined && now - sessionFailedAt >= UPDATE_RETRY_MS) resetSessionUpdate();
+  return sessionCheck ??= checkForUpdates({ automatic: true, fetcher: options.fetcher }).then(info => {
+    if (info.status === 'unavailable') sessionFailedAt = now;
+    return info;
+  });
+}
