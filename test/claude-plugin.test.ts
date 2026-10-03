@@ -24,7 +24,7 @@ test('Claude Code plugin starts the read-only MCP server and ships its own skill
   const mcp = await json('plugins/lms-cli-claude/.mcp.json');
   assert.deepEqual(mcp, { mcpServers: { lms: { command: 'lms', args: ['mcp'] } } });
   const skill = await read('plugins/lms-cli-claude/skills/lms-query/SKILL.md');
-  assert.match(skill, /^---\nname: lms-query\n/);
+  assert.match(skill, /^---\r?\nname: lms-query\r?\n/);
   assert.match(skill, /Do not run `lms ask`/);
   assert.doesNotMatch(skill, /from inside Codex/);
 });
