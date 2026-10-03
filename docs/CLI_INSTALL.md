@@ -1,6 +1,6 @@
 # CLI 安装、升级与恢复
 
-0.4.5 以 CLI 为入口。安装、配置、诊断、更新和回退均在终端进行；只有学校 SSO/MFA 可能显示网页。`setup --no-login` 不打开窗口或读取学校私有接口。
+0.4.6 以 CLI 为入口。安装、配置、诊断、更新和回退均在终端进行；只有学校 SSO/MFA 可能显示网页。`setup --no-login` 不打开窗口或读取学校私有接口。
 
 ## 自包含分发
 
@@ -22,7 +22,7 @@
 审阅脚本后，可本地执行：
 
 ```sh
-sh install.sh --version v0.4.5 --no-setup
+sh install.sh --version v0.4.6 --no-setup
 sh install.sh --dir /absolute/path/lms-runtime --no-path --no-setup
 ```
 
@@ -31,7 +31,7 @@ PowerShell 对应 `-Version`、`-InstallDir`、`-NoSetup`、`-NoPath`。版本�
 离线安装：
 
 ```sh
-sh install.sh --archive /path/lms-cli-0.4.5-darwin-arm64.tar.gz --checksum-file /path/SHA256SUMS.txt --version v0.4.5 --no-setup
+sh install.sh --archive /path/lms-cli-0.4.6-darwin-arm64.tar.gz --checksum-file /path/SHA256SUMS.txt --version v0.4.6 --no-setup
 ```
 
 Windows 对应 `-Archive`、`-ChecksumFile`、`-Version`。校验和必须来自可信发布，不要自行给陌生安装包补写校验和。安装无需管理员权限，不自动卸载全局 npm 包，不覆盖无关同名命令。
@@ -44,14 +44,14 @@ POSIX 安装器需要更新 PATH 时先备份 shell 配置，再附加带 `# lms
 lms-cli-runtime/
   .lms-install       本工具的目录标记
   bin/               稳定启动入口
-  current            当前版本，例如 v0.4.5
+  current            当前版本，例如 v0.4.6
   previous           上一版本
-  versions/v0.4.5/   不原地覆盖的运行时
+  versions/v0.4.6/   不原地覆盖的运行时
 ```
 
 程序目录不同于 `lms doctor` 显示的学校数据目录。学校配置、加密凭据和待办不在 `versions/` 中；不要修改 `LMS_HOME` 来升级程序，否则会选择另一份状态和密钥命名空间。
 
-`lms update` 只在用户确认或给出 `--yes` 后下载安装。只接受本仓库版本对应的 Release URL 和 GitHub 资产 CDN HTTPS 重定向，不执行发布说明中的命令。校验和不匹配、不安全解压路径、错误系统/架构、运行时或授权组件验证失败时，不切换当前版本。
+`lms update` 只在用户确认或给出 `--yes` 后下载安装。只接受本仓库版本对应的 Release URL 和 GitHub 资产 CDN HTTPS 重定向，不执行发布说明中的命令。校验和不匹配、不安全解压路径、错误系统/架构、运行时或授权组件验证失败时，不切换当前版本。下载在连续 60 秒收不到数据、或总时长超过 30 分钟时才会中止，因此慢网络下的大文件也能下完；中止后保留当前版本，并提示可从发布页面手动下载安装包，核对 `SHA256SUMS.txt` 后用 `install.sh --archive` 离线安装。
 
 升级会尝试刷新本工具生成的插件；失败会提示 `lms connect codex`。新建 Codex 任务后，才能完整使用新技能与工具。`lms update --rollback` 验证并恢复上一版本，保留学校数据。旧版本不自动清理，避免删除仍在运行或需要回退的文件。
 

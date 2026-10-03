@@ -42,24 +42,46 @@ export function safeArchiveEntry(path: string, type: string, linkpath = '') {
   return safe(target) && ['app', 'runtime', 'launchers'].includes(target.split('/')[0]!);
 }
 
-async function download(url: string, file: string, maxBytes: number): Promise<string> {
+/**
+ * A download fails when no bytes arrive for stallMs, or when it runs past totalMs. A fixed 180 s total used to abort
+ * every large archive on slow links (176 MB at 0.5 MB/s needs about 6 minutes) and surfaced as an opaque INTERNAL error.
+ */
+export const DOWNLOAD_LIMITS = { stallMs: 60_000, totalMs: 30 * 60_000 };
+const MANUAL_DOWNLOAD_HINT = `也可以从发布页面手动下载安装包，核对 SHA256SUMS.txt 后离线安装：${RELEASES_URL}`;
+
+export async function download(url: string, file: string, maxBytes: number, limits = DOWNLOAD_LIMITS): Promise<string> {
   let target = new URL(url);
   if (target.origin !== 'https://github.com' || !target.pathname.startsWith('/zs-andy/lms-cli/releases/download/')) throw new LmsError('UPDATE_URL_INVALID', '更新下载地址不属于本项目，已拒绝。');
-  const signal = AbortSignal.timeout(180_000);
-  for (let n = 0; n < 5; n++) {
-    if (target.protocol !== 'https:' || target.username || target.password || target.port || !TRUSTED_RELEASE_HOSTS.includes(target.hostname)) throw new LmsError('UPDATE_URL_INVALID', '下载重定向不属于 GitHub 发布服务。');
-    const res = await fetch(target, { redirect: 'manual', signal, headers: { 'User-Agent': 'lms-cli-updater' } });
-    if ([301, 302, 303, 307, 308].includes(res.status)) {
-      const location = res.headers.get('location'); await res.body?.cancel();
-      if (!location) throw new Error('Missing redirect'); target = new URL(location, target); continue;
+  const controller = new AbortController();
+  let reason: 'stalled' | 'too-long' | undefined;
+  const total = setTimeout(() => { reason ??= 'too-long'; controller.abort(); }, limits.totalMs);
+  let stall: NodeJS.Timeout | undefined;
+  const progress = () => { clearTimeout(stall); stall = setTimeout(() => { reason ??= 'stalled'; controller.abort(); }, limits.stallMs); };
+  progress();
+  try {
+    for (let n = 0; n < 5; n++) {
+      if (target.protocol !== 'https:' || target.username || target.password || target.port || !TRUSTED_RELEASE_HOSTS.includes(target.hostname)) throw new LmsError('UPDATE_URL_INVALID', '下载重定向不属于 GitHub 发布服务。');
+      const res = await fetch(target, { redirect: 'manual', signal: controller.signal, headers: { 'User-Agent': 'lms-cli-updater' } });
+      progress();
+      if ([301, 302, 303, 307, 308].includes(res.status)) {
+        const location = res.headers.get('location'); await res.body?.cancel();
+        if (!location) throw new Error('Missing redirect'); target = new URL(location, target); continue;
+      }
+      if (!res.ok || !res.body || Number(res.headers.get('content-length') || 0) > maxBytes) { await res.body?.cancel(); throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新下载失败或文件过大；当前版本保持不变。'); }
+      const hash = createHash('sha256'); let size = 0;
+      const limit = new Transform({ transform(chunk, _encoding, cb) { progress(); size += chunk.length; if (size > maxBytes) cb(new Error('Download too large')); else { hash.update(chunk); cb(null, chunk); } } });
+      await pipeline(Readable.fromWeb(res.body as any), limit, createWriteStream(file, { flags: 'wx', mode: 0o600 }), { signal: controller.signal });
+      return hash.digest('hex');
     }
-    if (!res.ok || !res.body || Number(res.headers.get('content-length') || 0) > maxBytes) { await res.body?.cancel(); throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新下载失败或文件过大；当前版本保持不变。'); }
-    const hash = createHash('sha256'); let size = 0;
-    const limit = new Transform({ transform(chunk, _encoding, cb) { size += chunk.length; if (size > maxBytes) cb(new Error('Download too large')); else { hash.update(chunk); cb(null, chunk); } } });
-    await pipeline(Readable.fromWeb(res.body as any), limit, createWriteStream(file, { flags: 'wx', mode: 0o600 }));
-    return hash.digest('hex');
-  }
-  throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新下载重定向过多；当前版本保持不变。');
+    throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新下载重定向过多；当前版本保持不变。');
+  } catch (error) {
+    if (error instanceof LmsError) throw error;
+    // Never pass a raw network/stream exception on: it would be reported as INTERNAL with no hint of what happened.
+    if (reason === 'stalled') throw new LmsError('UPDATE_DOWNLOAD_FAILED', `更新下载中断：连续 ${Math.round(limits.stallMs / 1000)} 秒没有收到数据。当前版本保持不变，网络恢复后可重新运行 lms update。`, MANUAL_DOWNLOAD_HINT);
+    if (reason === 'too-long') throw new LmsError('UPDATE_DOWNLOAD_FAILED', `更新下载超过 ${Math.round(limits.totalMs / 60_000)} 分钟仍未完成。当前版本保持不变，可换更快的网络后重试。`, MANUAL_DOWNLOAD_HINT);
+    if (error instanceof Error && error.message === 'Download too large') throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新包超过大小上限，已拒绝；当前版本保持不变。');
+    throw new LmsError('UPDATE_DOWNLOAD_FAILED', '更新下载失败（网络中断或连接被重置）。当前版本保持不变，可稍后重新运行 lms update。', MANUAL_DOWNLOAD_HINT);
+  } finally { clearTimeout(total); clearTimeout(stall); }
 }
 
 async function verifyBundle(directory: string, tag: string) {
