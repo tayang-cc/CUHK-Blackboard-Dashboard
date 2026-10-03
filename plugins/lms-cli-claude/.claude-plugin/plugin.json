@@ -1,0 +1,13 @@
+{
+  "name": "lms-cli",
+  "version": "0.4.2",
+  "description": "Multi-school Canvas / Blackboard CLI and Agent tools for school discovery, courses, announcements, assignments, feedback and schedules.",
+  "author": {
+    "name": "zs-andy and contributors",
+    "url": "https://github.com/zs-andy"
+  },
+  "homepage": "https://github.com/zs-andy/lms-cli",
+  "repository": "https://github.com/zs-andy/lms-cli",
+  "license": "MIT",
+  "keywords": ["lms", "canvas", "blackboard", "education", "mcp", "multi-school"]
+}

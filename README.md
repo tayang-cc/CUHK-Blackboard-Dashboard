@@ -2,7 +2,7 @@
 
 面向 Canvas 和 Blackboard 的多学校命令行工具，为终端和 Agent 提供统一的课程、通知、作业、成绩反馈与资料查询接口。
 
-安装、学校搜索、配置和更新均在终端完成。只有学校登录或 MFA 需要交互时才打开授权窗口。支持独立使用 CLI，也可通过 MCP 接入 Codex 或其他 Agent 客户端。
+安装、学校搜索、配置和更新均在终端完成。只有学校登录或 MFA 需要交互时才打开授权窗口。支持独立使用 CLI，也可通过 MCP 接入 Codex、Claude Code 或其他 Agent 客户端。
 
 ## 快速开始
 
@@ -52,6 +52,19 @@ lms overview --days 7 --fresh
 运行已配置平台的命令即可。接入 Codex 后，在新任务中输入：
 
 > 整理本周课程和作业安排，同时检查老师通知中的调课和截止时间变更，附上来源。
+
+### 在 Claude Code 中使用
+
+先完成上面的安装，并用 `lms setup --no-codex` 配置学校（`lms connect codex` 只用于 Codex）。然后在 Claude Code 中安装本仓库的插件：
+
+```sh
+claude plugin marketplace add zs-andy/lms-cli
+claude plugin install lms-cli@lms-cli
+```
+
+插件只注册 `lms mcp` 服务和 `lms-query` 技能，不会安装 CLI，需要 `lms` 已在 PATH 中。安装后新开一个会话即可提问。不想使用插件时，也可以直接运行 `claude mcp add --scope user lms -- lms mcp`；两种方式不要同时启用。
+
+只读的 `lms` 工具带有 MCP 只读标注，可按需在 Claude Code 的权限设置中放行；`lms_profile_add`、`lms_profile_use`、`lms_auth_login` 和 `lms_items_upsert` 会修改本地配置或打开登录窗口，建议保持逐次确认。Codex 插件位于 `plugins/lms-cli/`，Claude Code 插件位于 `plugins/lms-cli-claude/`，两者互相独立。
 
 ## 实验性登录选项
 
