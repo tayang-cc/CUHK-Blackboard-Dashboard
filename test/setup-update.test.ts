@@ -41,19 +41,22 @@ test('update selection is pinned to the exact OS, architecture, repository and c
   assert.throws(() => inspectRelease({ ...release(), tag_name: 'v9.0.0/../../bad' }));
 });
 
-test('update checks fail softly, respect opt-out and send no school configuration', async () => {
+test('REST fallback fails softly, respects opt-out and sends no school configuration', async () => {
   let calls = 0;
+  // github.com pages are unreachable here, so every check exercises the REST fallback.
   const fetcher = (async (url: any, init: any) => {
-    calls++; assert.equal(url, RELEASE_API); assert.equal(init.redirect, 'error');
+    if (url !== RELEASE_API) throw new Error('github.com unreachable');
+    calls++; assert.equal(init.redirect, 'error');
     assert.deepEqual(Object.keys(init.headers).sort(), ['Accept', 'User-Agent']);
     assert(!JSON.stringify(init).includes('school'));
     return new Response(JSON.stringify(release()), { status: 200 });
   }) as typeof fetch;
   assert.equal((await checkForUpdates({ automatic: true, fetcher })).status, 'disabled'); assert.equal(calls, 0);
   assert.equal((await checkForUpdates({ fetcher })).status, 'available'); assert.equal(calls, 1);
-  for (const response of [new Response('', { status: 429 }), new Response('not-json'), new Response('a'.repeat(1024 * 1024 + 1))]) assert.equal((await checkForUpdates({ fetcher: (async () => response) as typeof fetch })).status, 'unavailable');
+  const bad = [() => new Response('', { status: 429 }), () => new Response('not-json'), () => new Response('a'.repeat(1024 * 1024 + 1))];
+  for (const response of bad) assert.equal((await checkForUpdates({ fetcher: (async (url: any) => url === RELEASE_API ? response() : (() => { throw new Error('github.com unreachable'); })()) as typeof fetch })).status, 'unavailable');
   assert.equal((await checkForUpdates({ fetcher: (async () => { throw new Error('private diagnostic'); }) as typeof fetch })).status, 'unavailable');
-  assert.equal((await checkForUpdates({ fetcher: (async () => new Response('', { status: 404 })) as typeof fetch })).status, 'no-release');
+  assert.equal((await checkForUpdates({ fetcher: (async (url: any) => url === RELEASE_API ? new Response('', { status: 404 }) : (() => { throw new Error('github.com unreachable'); })()) as typeof fetch })).status, 'no-release');
 });
 
 test('checksums and archive traversal/link escapes fail closed', () => {

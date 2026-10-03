@@ -11,7 +11,7 @@ import * as tar from 'tar';
 import { atomicWrite, stateHome } from './config.js';
 import { LmsError } from './errors.js';
 import { managedRoot } from './runtime.js';
-import { parseVersion, RELEASES_URL, type UpdateInfo } from './updates.js';
+import { parseVersion, RELEASES_URL, TRUSTED_RELEASE_HOSTS, type UpdateInfo } from './updates.js';
 
 export const INSTALL_MARKER = 'lms-cli-managed-v1\n';
 export function safeTag(value: string) { return /^v\d+\.\d+\.\d+$/.test(value) && Boolean(parseVersion(value)); }
@@ -47,7 +47,7 @@ async function download(url: string, file: string, maxBytes: number): Promise<st
   if (target.origin !== 'https://github.com' || !target.pathname.startsWith('/zs-andy/lms-cli/releases/download/')) throw new LmsError('UPDATE_URL_INVALID', '更新下载地址不属于本项目，已拒绝。');
   const signal = AbortSignal.timeout(180_000);
   for (let n = 0; n < 5; n++) {
-    if (target.protocol !== 'https:' || target.username || target.password || target.port || !['github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'].includes(target.hostname)) throw new LmsError('UPDATE_URL_INVALID', '下载重定向不属于 GitHub 发布服务。');
+    if (target.protocol !== 'https:' || target.username || target.password || target.port || !TRUSTED_RELEASE_HOSTS.includes(target.hostname)) throw new LmsError('UPDATE_URL_INVALID', '下载重定向不属于 GitHub 发布服务。');
     const res = await fetch(target, { redirect: 'manual', signal, headers: { 'User-Agent': 'lms-cli-updater' } });
     if ([301, 302, 303, 307, 308].includes(res.status)) {
       const location = res.headers.get('location'); await res.body?.cancel();

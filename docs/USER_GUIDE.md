@@ -102,7 +102,7 @@ lms update --rollback
 
 升级后重新启动 CLI 或创建新的 Codex 任务。插件刷新失败时运行 `lms connect codex` 重试。自动升级适用于自包含安装；源码安装按[开发指南](DEVELOPMENT.md)重新构建和安装。
 
-交互式 CLI 与 MCP 会话首次配置查询默认向本项目 GitHub Release API 检查稳定版。帮助、版本、诊断、管道、`--json` 和 `--offline` 不隐式检查。`LMS_UPDATE_CHECK=0` 关闭自动检查；显式的 `lms update --check` 仍会联网。网络不可用时显式检查会报告失败，自动检查不影响课程查询。
+交互式 CLI 与 MCP 会话首次配置查询默认向本项目 GitHub Release 页面检查稳定版（不占用 GitHub API 匿名额度），页面不可用时退回 Release API。帮助、版本、诊断、管道、`--json` 和 `--offline` 不隐式检查。`LMS_UPDATE_CHECK=0` 关闭自动检查；显式的 `lms update --check` 仍会联网。网络不可用时显式检查会报告失败，自动检查不影响课程查询。
 
 ## 诊断与故障排查
 

@@ -18,7 +18,7 @@
 
 在线学校搜索向 Canvas 官方公开目录发送你输入的学校名称或域名，不携带学校凭据、不读取个人配置，也不访问搜索结果中的学校私有接口。目录提供方可见查询词及正常网络连接信息。不要输入账号、密码或其他个人资料；使用 `--offline` 可以仅搜索本地预设。Blackboard 当前不发送在线目录请求。
 
-交互式 CLI 使用时和 MCP 会话首次读取配置时，会向固定的 GitHub 公开 Release API 检查版本。请求使用通用 User-Agent，不包含学校、账号、课程或凭据；GitHub 可见正常连接信息。设置 `LMS_UPDATE_CHECK=0` 关闭自动检查，`lms update --check` 仍可主动检查。检查本身不会下载或执行更新。
+交互式 CLI 使用时和 MCP 会话首次读取配置时，会向固定的 GitHub 公开 Release 页面（github.com）检查版本，页面不可用时退回公开 Release API。请求使用通用 User-Agent，不包含学校、账号、课程或凭据；GitHub 可见正常连接信息。设置 `LMS_UPDATE_CHECK=0` 关闭自动检查，`lms update --check` 仍可主动检查。检查本身不会下载或执行更新。
 
 安装器及经确认的更新从项目 GitHub Release 下载程序和校验和，必要时经过 GitHub 的文件分发服务。开发者源码安装还会从 npm、Node.js 和 Electron 的分发来源获取依赖。
 
