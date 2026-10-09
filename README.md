@@ -1,6 +1,6 @@
 # CUHK Blackboard Dashboard
 
-香港中文大学（香港本部）的本地 Blackboard 学习 Dashboard，基于 [zs-andy/lms-cli](https://github.com/zs-andy/lms-cli) 开发。
+香港中文大学的本地 Blackboard 学习 Dashboard，基于 [zs-andy/lms-cli](https://github.com/zs-andy/lms-cli) 开发。
 
 将课程、公告、作业截止日期和日历集中展示，提供图形界面、CLI 和 MCP。学校平台操作为只读，登录与验证由用户在学校页面完成。
 
