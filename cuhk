@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+project=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cuhk_node=${CUHK_NODE:-node}
+if [ -z "${CUHK_NODE:-}" ] && [ -f "$project/.cuhk-node" ]; then
+  IFS= read -r cuhk_node < "$project/.cuhk-node"
+fi
+export LMS_HOME="${CUHK_LMS_HOME:-$project/.cuhk-data}"
+export LMS_UPDATE_CHECK=0
+if [ "$#" -eq 0 ]; then
+  set -- setup --preset cuhk --yes --no-codex
+fi
+exec "$cuhk_node" "$project/bin/lms.js" "$@"

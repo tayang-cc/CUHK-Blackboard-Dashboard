@@ -18,6 +18,8 @@ dist.previous*/
 !.env.example
 .DS_Store
 coverage/
+.cuhk-data/
+.cuhk-node
 *.tsbuildinfo
 profiles.json
 vault/

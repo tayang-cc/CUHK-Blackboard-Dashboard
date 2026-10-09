@@ -1,11 +1,21 @@
 import { app, BrowserWindow, ipcMain, session, type WebContents, type IpcMainEvent, type IpcMainInvokeEvent, type Session as ElectronSession } from 'electron';
 import { fileURLToPath } from 'node:url';
-import { getProfile, loadConfig, Platform, platforms, type Profile, type Platform as PlatformType } from '../config.js';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { getProfile, loadConfig, Platform, platforms, stateHome, type Profile, type Platform as PlatformType } from '../config.js';
 import { cookieHeader, allowedNavigation } from './cookies.js';
 import { validateInWorker } from './validate.js';
 import { authorizationHTML } from './ui.js';
 import { attachSchoolPage } from './school-view.js';
 import { loginStore, loginPage, loginSummary, canRestoreLogin, matchesLoginForm, LoginOptions, LoginAttempt, type LoginSummary } from './preferences.js';
+
+// Explicit local installations keep browser sessions beside their isolated vault.
+if (process.env.LMS_HOME) {
+  const browserHome = join(stateHome(), 'browser');
+  mkdirSync(browserHome, { recursive: true, mode: 0o700 });
+  app.setPath('userData', browserHome);
+  app.setPath('sessionData', browserHome);
+}
 
 let controller: BrowserWindow; let busy = false; let message = '准备登录'; let abort: AbortController | undefined;
 const arg = (name: string) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : undefined; };
@@ -303,4 +313,8 @@ async function boot() {
     void start(initial.id, selection).catch(() => { message = '未能打开已保存的登录，请点击开始登录重试。'; void push(); });
 }
 
-void boot().catch(() => { app.exit(1); });
+if (process.argv.includes('--dashboard')) {
+  void import('../dashboard/app.js').then(module => module.startDashboard()).catch(() => { app.exit(1); });
+} else {
+  void boot().catch(() => { app.exit(1); });
+}

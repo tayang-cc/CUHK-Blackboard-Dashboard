@@ -79,8 +79,12 @@ export async function getProfile(id?: string): Promise<Profile> {
 }
 export function platforms(p: Profile): Platform[] { return platformIds.filter(k => p[k]); }
 export const polyu = { id: 'polyu', label: 'The Hong Kong Polytechnic University', timezone: 'Asia/Hong_Kong', canvas: 'https://canvas.polyu.edu.hk', blackboard: 'https://learn.polyu.edu.hk' };
+export const cuhk = { id: 'cuhk', label: 'The Chinese University of Hong Kong', timezone: 'Asia/Hong_Kong', blackboard: 'https://blackboard.cuhk.edu.hk' };
 
-export const presets = [{ name: 'polyu', profile: polyu, compatibility: 'Preset URLs only; school SSO and individual features still require live verification.' }];
+export const presets: Array<{ name: string; profile: Profile; aliases: string[]; compatibility: string }> = [
+  { name: 'polyu', profile: polyu, aliases: ['香港理工大学', '香港理工大學', '理大'], compatibility: 'Preset URLs only; school SSO and individual features still require live verification.' },
+  { name: 'cuhk', profile: cuhk, aliases: ['香港中文大学', '香港中文大學', '港中文', '中大', 'CUHK Hong Kong'], compatibility: 'Hong Kong campus URL preset only; CUHK SSO and each Blackboard feature require live verification. Not CUHK Shenzhen.' },
+];
 
 export async function initProfile(options: Partial<Profile> & { preset?: string }) {
   if (!options.preset) { const { preset: _preset, ...fields } = options; return addProfile(fields); }

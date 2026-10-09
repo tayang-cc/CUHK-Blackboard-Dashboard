@@ -57,7 +57,7 @@ export async function searchSchools(input: string, options: SchoolSearchOptions 
   const needle = query.toLocaleLowerCase();
   const matches: SchoolMatch[] = [];
   for (const preset of presets) {
-    const aliases = preset.name === 'polyu' ? ['香港理工大学', '香港理工大學', '理大'] : [];
+    const aliases = preset.aliases;
     const { label, timezone } = preset.profile;
     const origins = Object.fromEntries(Object.entries(preset.profile).filter(([key]) => ['canvas', 'blackboard'].includes(key) && (!options.platform || key === options.platform))) as SchoolMatch['platforms'];
     if (Object.keys(origins).length && [preset.name, label, ...aliases, ...Object.values(origins)].some(value => value.toLocaleLowerCase().includes(needle))) {
