@@ -289,6 +289,7 @@ export interface BbGrade {
   lastOverrideDate?: string;
   firstAttemptId?: string | null;
   lastAttemptId?: string | null;
+  lastAttempt?: BbAttempt;
   highestAttemptId?: string | null;
   lowestAttemptId?: string | null;
   submissionStatus?: { status?: string; actionCount?: number | null };

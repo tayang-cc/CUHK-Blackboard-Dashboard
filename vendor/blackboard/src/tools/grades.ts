@@ -130,7 +130,7 @@ export function registerGradeTools(server: McpServer): void {
             }${final.calculatedFormula ? '. Calculated/weighted' : ''}\n`
           : '';
 
-        return text(
+        const response = text(
           [
             `# Grades: ${label}`,
             finalNote,
@@ -139,6 +139,10 @@ export function registerGradeTools(server: McpServer): void {
             '_Use `bb_get_grade_detail` with a columnId for feedback, attempts and submissions._',
           ].join('\n'),
         );
+        // Preserve full identifiers/names for deadline matching; Markdown titles are clipped.
+        return { ...response, structuredContent: { courseId: args.courseId, columns: columns.map(c => ({
+          id: c.id, title: columnName(c), due: c.dueDate,
+        })) } };
       }
 
       // ── all courses, via the batch fan-out ──
@@ -738,7 +742,7 @@ export function registerGradeTools(server: McpServer): void {
         client.getSubmissionStatus(courseId, columnId),
       ]);
 
-      return text(
+      const response = text(
         [
           `# ${column ? columnName(column) : columnId}`,
           '',
@@ -759,6 +763,7 @@ export function registerGradeTools(server: McpServer): void {
             : '_Derived from the gradebook record. A missing grade record means no attempt exists._',
         ].join('\n'),
       );
+      return { ...response, structuredContent: { courseId, columnId, ...status } };
     }),
   );
   server.registerTool(

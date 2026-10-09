@@ -1,5 +1,11 @@
 import type { ReadResult } from '../backend.js';
 
+export interface DashboardTask {
+  title: string; course: string; courseId: string; due: string; sources: string[]; url?: string;
+  manualKey?: string; manualCompletion?: boolean; manualAvailable?: boolean;
+  columnId?: string; completion?: 'completed' | 'not-submitted' | 'unknown';
+}
+
 export function resultText(result: ReadResult): string {
   return (result.data?.content ?? []).filter(c => c.type === 'text').map(c => c.text).join('\n');
 }
@@ -32,16 +38,16 @@ export function normalizeOverview(input: { results: ReadResult[]; ok: boolean; p
     const source = meta.match(/source: (https:\/\/\S+)/)?.[1] ?? '';
     return { title: lines[0] ?? '', course, date, unread: meta.includes('*unread*'), body: lines.slice(2).join('\n').replace(/\n---\s*$/, '').trim(), url: schoolURL(source) };
   });
-  const tasks: Array<{ title: string; course: string; courseId: string; due: string; sources: string[]; url?: string }> = [];
+  const tasks: DashboardTask[] = [];
   for (const tool of ['bb_todo', 'bb_calendar']) {
     const result = find(tool); if (!result?.ok) continue;
     for (const row of tableRows(resultText(result))) {
       const date = (row.due ?? row.start ?? '').match(/\d{4}-\d\d-\d\dT[\d:.]+Z/)?.[0];
       if (!date || !Number.isFinite(Date.parse(date))) continue;
       const course = courses.find(c => row.courseId ? c.id === row.courseId : row.calendar?.startsWith(c.code + ':'));
-      const task = { title: row.item ?? row.title ?? '', course: course?.name ?? row.course ?? row.calendar ?? '', courseId: course?.id ?? row.courseId ?? '', due: date, sources: [tool === 'bb_todo' ? '待办' : '日历'], url: course?.url };
+      const task: DashboardTask = { columnId: /^_\d+_\d+$/.test(row.columnId ?? '') ? row.columnId : undefined, title: row.item ?? row.title ?? '', course: course?.name ?? row.course ?? row.calendar ?? '', courseId: course?.id ?? row.courseId ?? '', due: date, sources: [tool === 'bb_todo' ? '待办' : '日历'], url: course?.url };
       const duplicate = tasks.find(t => t.title === task.title && t.due === task.due && t.courseId && t.courseId === task.courseId);
-      if (duplicate) { if (!duplicate.sources.includes(task.sources[0]!)) duplicate.sources.push(task.sources[0]!); }
+      if (duplicate) { duplicate.columnId ??= task.columnId; if (!duplicate.sources.includes(task.sources[0]!)) duplicate.sources.push(task.sources[0]!); }
       else tasks.push(task);
     }
   }

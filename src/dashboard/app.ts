@@ -4,7 +4,9 @@ import { Backend } from '../backend.js';
 import { getProfile, initProfile } from '../config.js';
 import { startLogin, finishLogin } from '../auth/launch.js';
 import { LmsError, publicError } from '../errors.js';
-import { normalizeOverview, resultText, schoolURL } from './data.js';
+import { normalizeOverview, resultText, schoolURL, tableRows } from './data.js';
+import { enrichSubmissionStatus } from './submissions.js';
+import { CompletionStore, completionKey, completionScope } from './completion-store.js';
 import { dashboardHTML } from './ui.js';
 
 export async function startDashboard() {
@@ -23,14 +25,41 @@ export async function startDashboard() {
       try { return await action(...args); } catch (error) { return { ok: false, error: publicError(error) }; }
     });
   };
+  const completionStore = new CompletionStore();
+  let manualScope: string | undefined;
+  let visibleKeys = new Set<string>();
   let loading: Promise<unknown> | undefined;
   handle('cuhk:load', async (days: unknown) => {
     if (days !== 7 && days !== 14 && days !== 30) throw new LmsError('BAD_INPUT', '请选择 7、14 或 30 天。');
     if (loading) return loading;
-    loading = backend.overview(profile, days, true).then(normalizeOverview);
+    loading = (async () => {
+      const [overview, identity] = await Promise.all([
+        backend.overview(profile, days, true), backend.call(profile, 'bb_whoami', {}, { fresh: true }),
+      ]);
+      const data = await enrichSubmissionStatus(normalizeOverview(overview), (tool, args) => backend.call(profile, tool, args, { fresh: true }));
+      const userId = identity.ok ? tableRows(resultText(identity)).find(r => r.field === 'user id')?.value : undefined;
+      manualScope = userId ? completionScope(profile.id, profile.blackboard!, userId) : undefined;
+      visibleKeys = new Set();
+      let marks: Record<string, boolean> = {};
+      if (manualScope) {
+        try { marks = await completionStore.load(manualScope); }
+        catch { manualScope = undefined; data.errors.push({ tool: 'manual-completion', code: 'LOCAL_READ_FAILED', message: '本机完成标记无法读取，暂时不能手动勾选。' }); }
+      }
+      for (const task of data.tasks) {
+        task.manualKey = completionKey(task); task.manualAvailable = !!manualScope;
+        task.manualCompletion = marks[task.manualKey]; visibleKeys.add(task.manualKey);
+      }
+      return data;
+    })();
     try { return await loading; } finally { loading = undefined; }
   });
+  handle('cuhk:complete', async (key: unknown, value: unknown) => {
+    if (loading || !manualScope || typeof key !== 'string' || !visibleKeys.has(key) || (value !== null && typeof value !== 'boolean')) throw new LmsError('BAD_INPUT', '请刷新后再设置完成标记。');
+    await completionStore.set(manualScope, key, value);
+    return { ok: true };
+  });
   handle('cuhk:login', async () => {
+    manualScope = undefined; visibleKeys.clear();
     const job = startLogin(profile, 'blackboard');
     const state = await finishLogin(job.id);
     return { ok: state === 'finished', state };

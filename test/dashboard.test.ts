@@ -42,3 +42,52 @@ test('dashboard CSP has a unique nonce and remote strings are rendered as text',
   assert.deepEqual(Array.from(cells), ['A | B', 'pdf']);
   assert.match(html, /r\.text\.split\('\\n'\)/);
 });
+
+const structured = (tool: string, value: Record<string, unknown>, ok = true) => ({ ...result(tool, '', ok), data: { content: [], structuredContent: value } });
+test('submission completion requires a submitted attempt and excludes drafts, missing records and failed reads', async () => {
+  const { completionFromResult } = await import('../src/dashboard/submissions.js');
+  for (const status of ['NEEDS_GRADING', 'GRADED', 'SUBMITTED']) assert.equal(completionFromResult(structured('bb_submission_status', { submitted: true, attemptId: '_9_1', attemptStatus: status })), 'completed');
+  assert.equal(completionFromResult(structured('bb_submission_status', { submitted: false, status: 'NEEDS_GRADING' })), 'not-submitted');
+  assert.equal(completionFromResult(structured('bb_submission_status', { submitted: true, attemptId: '_9_1', attemptStatus: 'IN_PROGRESS', submittedAt: '2026-10-09T08:00:00Z' })), 'not-submitted');
+  assert.equal(completionFromResult(structured('bb_submission_status', { submitted: true, attemptStatus: 'GRADED' })), 'unknown');
+  assert.equal(completionFromResult(structured('bb_submission_status', { submitted: true, attemptId: '_9_1', status: 'NEEDS_GRADING', submittedAt: '2026-10-09T08:00:00Z' })), 'unknown');
+  assert.equal(completionFromResult(structured('bb_submission_status', { submitted: true, attemptId: '_9_1', attemptStatus: 'GRADED' }, false)), 'unknown');
+});
+
+test('submission lookup matches calendar identity exactly, handles ambiguity and isolates failed reads', async () => {
+  const { enrichSubmissionStatus } = await import('../src/dashboard/submissions.js');
+  const data = normalizeOverview({ ok: true, partial: false, scope: {}, results: [] });
+  const due = '2026-10-12T15:59:00Z';
+  data.tasks = ['Homework 1', 'Assignment 2', 'Homework 3', 'Homework 4', 'Office hours'].map(title => ({ title, course: 'Sample', courseId: '_1_1', due, sources: ['日历'] }));
+  data.tasks.push({ title: 'Long clipped...', course: 'Sample', courseId: '_1_1', columnId: '_7_1', due, sources: ['待办'] });
+  const calls: string[] = [];
+  await enrichSubmissionStatus(data, async (tool, args) => {
+    calls.push(tool + ':' + (args.columnId ?? args.courseId));
+    if (tool === 'bb_list_grades') return structured(tool, { courseId: '_1_1', columns: [
+      { id: '_2_1', title: 'Homework 1', due },
+      { id: '_3_1', title: 'Assignment 2', due },
+      { id: '_4_1', title: 'Homework 3', due }, { id: '_5_1', title: 'Homework 3', due },
+      { id: '_6_1', title: 'Homework 4', due: '2026-10-13T15:59:00Z' },
+    ] });
+    if (args.columnId === '_3_1') throw new Error('Network unavailable');
+    return structured(tool, { ...args, submitted: true, attemptId: '_9_1', attemptStatus: 'NEEDS_GRADING' });
+  });
+  assert.deepEqual(data.tasks.map(t => t.completion), ['completed', 'unknown', 'unknown', 'unknown', undefined, 'completed']);
+  assert.equal(calls.length, 4);
+  assert.equal(data.ok, true);
+  assert.equal(data.tasks.length, 6);
+});
+
+test('submission lookups deduplicate IDs, limit concurrency and reject mismatched identity', async () => {
+  const { enrichSubmissionStatus } = await import('../src/dashboard/submissions.js');
+  const data = normalizeOverview({ ok: true, partial: false, scope: {}, results: [] });
+  data.tasks = Array.from({ length: 8 }, (_, i) => ({ title: 'Assignment ' + i, course: 'Sample', courseId: '_1_1', columnId: '_' + (i % 4 + 1) + '_1', due: '2026-10-12T15:59:00Z', sources: ['待办'] }));
+  let active = 0, max = 0, count = 0;
+  await enrichSubmissionStatus(data, async (tool, args) => {
+    active++; count++; max = Math.max(max, active);
+    await new Promise(resolve => setTimeout(resolve, 5)); active--;
+    return structured(tool, { ...args, courseId: '_999_1', submitted: true, attemptId: '_9_1', attemptStatus: 'GRADED' });
+  });
+  assert.equal(count, 4); assert.equal(max, 3);
+  assert.ok(data.tasks.every(t => t.completion === 'unknown'));
+});

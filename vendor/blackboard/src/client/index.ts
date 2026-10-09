@@ -496,7 +496,7 @@ export class BlackboardClient {
     const uid = userId ?? (await this.selfId());
     return this.paginate<BbGrade>(expand('columnGrades', { courseId, columnId }), {
       limit: 100,
-      query: { userId: uid, expand: 'lastFeedbackAuthor,lastInstructorNotesAuthor' },
+      query: { userId: uid, expand: 'lastAttempt,submissionStatus,lastFeedbackAuthor,lastInstructorNotesAuthor' },
     });
   }
 
@@ -727,6 +727,8 @@ export class BlackboardClient {
     submitted: boolean;
     attemptId?: string;
     status?: string;
+    attemptStatus?: string;
+    submissionReceiptDate?: string;
     submittedAt?: string;
     late?: boolean;
     attemptCount?: number;
@@ -741,36 +743,27 @@ export class BlackboardClient {
       throw err;
     }
 
-    const grade = grades[0];
+    // Some tenants omit scalar attempt IDs, but return an expanded lastAttempt
+    // or an attempt history. Also preserve an earlier submission if a new draft exists.
+    const grade = grades.find(g => g.lastAttemptId || g.firstAttemptId || g.lastAttempt?.id) ?? grades[0];
     if (!grade) return { submitted: false };
-
-    const attemptId =
-      grade.lastAttemptId ?? grade.firstAttemptId ?? grade.highestAttemptId ?? undefined;
-    if (!attemptId) {
-      return { submitted: false, status: grade.status ?? undefined };
-    }
-
-    // Read the attempt itself for the authoritative timestamp and receipt.
-    let attempt: BbAttempt | undefined;
-    try {
-      attempt = await this.getAttempt(courseId, attemptId);
-    } catch {
-      /* the id is enough to know something was submitted */
-    }
-
-    let attemptCount: number | undefined;
-    if (grade.id) {
-      const rows = await this.listGradeAttempts(courseId, columnId, grade.id).catch(() => []);
-      if (rows.length > 0) attemptCount = rows.length;
-    }
-
+    const history = grade.id ? await this.listGradeAttempts(courseId, columnId, grade.id).catch(() => []) : [];
+    const submittedState = (s?: string) => ['NEEDS_GRADING', 'GRADED', 'SUBMITTED', 'COMPLETED'].includes((s ?? '').toUpperCase());
+    const submittedHistory = history.find(a => a.id && submittedState(a.status));
+    const attemptId = submittedHistory?.id ?? grade.lastAttemptId ?? grade.lastAttempt?.id ??
+      grade.firstAttemptId ?? grade.highestAttemptId ?? history[0]?.id ?? undefined;
+    if (!attemptId) return { submitted: false, status: grade.status ?? undefined };
+    let attempt = grade.lastAttempt?.id === attemptId ? grade.lastAttempt : undefined;
+    try { attempt = await this.getAttempt(courseId, attemptId); } catch { /* Use expanded attempt/history evidence. */ }
+    const historyRow = history.find(a => a.id === attemptId);
+    const attemptStatus = attempt?.status ?? historyRow?.status;
     return {
-      submitted: true,
-      attemptId,
-      status: attempt?.status ?? grade.status ?? undefined,
-      submittedAt: attempt?.attemptReceipt?.submissionDate ?? attempt?.attemptDate ?? undefined,
+      submitted: true, attemptId, attemptStatus,
+      submissionReceiptDate: attempt?.attemptReceipt?.submissionDate,
+      status: attemptStatus ?? grade.status ?? undefined,
+      submittedAt: attempt?.attemptReceipt?.submissionDate ?? attempt?.attemptDate ?? historyRow?.attemptDate,
       late: attempt?.attemptReceipt?.lateSubmission,
-      attemptCount,
+      attemptCount: history.length || undefined,
     };
   }
 
