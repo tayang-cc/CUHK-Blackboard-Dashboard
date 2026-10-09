@@ -4,7 +4,9 @@
 
 将课程、公告、作业截止日期和日历集中展示，提供图形界面、CLI 和 MCP。学校平台操作为只读，登录与验证由用户在学校页面完成。
 
-![Dashboard 界面预览（虚构测试数据）](docs/dashboard-preview.jpg)
+![Dashboard 总览（虚构测试数据）](docs/dashboard-overview.jpg)
+
+![DDL总览（虚构测试数据）](docs/dashboard-ddl.jpg)
 
 > 预览图使用虚构测试数据；运行后读取你自己的 Blackboard 账号。此项目为独立社区项目，与 CUHK、Blackboard 及上游开发者无官方合作关系。
 
