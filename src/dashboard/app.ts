@@ -7,6 +7,7 @@ import { LmsError, publicError } from '../errors.js';
 import { normalizeOverview, resultText, schoolURL, tableRows } from './data.js';
 import { enrichSubmissionStatus } from './submissions.js';
 import { CompletionStore, completionKey, completionScope } from './completion-store.js';
+import { resourceURL } from './resources.js';
 import { dashboardHTML } from './ui.js';
 
 export async function startDashboard() {
@@ -68,6 +69,11 @@ export async function startDashboard() {
     if (typeof id !== 'string' || !/^_\d+_\d+$/.test(id) || (resource !== 'content' && resource !== 'files')) throw new LmsError('BAD_INPUT', '课程或查询类型无效。');
     const result = await backend.call(profile, resource === 'content' ? 'bb_list_content' : 'bb_list_files', { courseId: id }, { fresh: true });
     return { ok: result.ok, text: result.ok ? resultText(result) : '', error: result.error };
+  });
+  handle('cuhk:resource', async (id: unknown) => {
+    const url = resourceURL(id);
+    if (!url) throw new LmsError('BAD_INPUT', '工具链接无效。');
+    await shell.openExternal(url); return { ok: true };
   });
   handle('cuhk:open', async (value: unknown) => {
     const url = typeof value === 'string' ? schoolURL(value) : undefined;

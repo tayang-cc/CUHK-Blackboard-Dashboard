@@ -91,3 +91,11 @@ test('submission lookups deduplicate IDs, limit concurrency and reject mismatche
   assert.equal(count, 4); assert.equal(max, 3);
   assert.ok(data.tasks.every(t => t.completion === 'unknown'));
 });
+
+
+test('official tool links accept only the two fixed resource identifiers', async () => {
+  const { resourceURL } = await import('../src/dashboard/resources.js');
+  assert.equal(resourceURL('student-timetable'), 'https://campusapps.itsc.cuhk.edu.hk/store/stu/apps.aspx');
+  assert.equal(resourceURL('mobile-app-guide'), 'https://www.itsc.cuhk.edu.hk/all-it/phone-mobile/cuhk-mobile-app-store/');
+  for (const value of ['https://evil.example', 'https://campusapps.itsc.cuhk.edu.hk/store/stu/apps.aspx', '__proto__', 'constructor', 'student-timetable?url=x', '', null, {}, ['student-timetable']]) assert.equal(resourceURL(value), undefined);
+});
