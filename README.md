@@ -28,9 +28,17 @@ DDL 总览：支持手动勾选完成、取消勾选，以及恢复 Blackboard �
 - **登录与刷新**：复用本机授权，支持重新登录及未来 7、14、30 天查询窗口。
 - **CLI / MCP**：沿用上游的结构化查询、AI 助手接入和本地待办功能。
 
+## 平台支持
+
+| 平台 | 图形启动入口 | 验证情况 |
+| --- | --- | --- |
+| macOS | `Open-CUHK.command` | 已有用户使用反馈，详见验证记录 |
+| Windows | `Open-CUHK.cmd` | 已补齐源码启动入口，待实机验证 |
+| Linux | 暂无专用图形启动入口 | 未适配、未实测 |
+
 ## 在 macOS 上运行
 
-需要 Git、npm 和 **Node.js 24 LTS**。当前图形界面启动入口面向 macOS；Windows/Linux 图形启动尚未适配和实测。
+需要 Git、npm 和 **Node.js 24 LTS**。提供 macOS 与 Windows 图形启动入口；Windows 入口已补齐，真实 Windows 环境运行仍待验证。Linux 图形启动入口尚未适配。
 
 ```sh
 git clone https://github.com/tayang-cc/CUHK-Blackboard-Dashboard.git
@@ -54,6 +62,27 @@ chmod +x cuhk *.command
 ```
 
 完整操作说明见 [README-CUHK.md](README-CUHK.md)。本仓库提供源码，尚未发布此 Dashboard 的独立安装包。
+
+## 在 Windows 上运行
+
+先安装 Git 和 **Node.js 24 LTS**，然后在命令提示符（CMD）中运行：
+
+```bat
+git clone https://github.com/tayang-cc/CUHK-Blackboard-Dashboard.git
+cd CUHK-Blackboard-Dashboard
+npm ci
+node node_modules/electron/install.js
+npm run build
+Open-CUHK.cmd
+```
+
+之后可双击 **`Open-CUHK.cmd`** 打开界面。首次点击「登录 / 重新授权」，在学校页面完成登录。`Start-CUHK.cmd` 用于配置、登录和检查，`Check-CUHK.cmd` 用于检查现有连接。
+
+Windows CLI：`cuhk.cmd --profile cuhk overview --days 7 --fresh`；PowerShell 中使用 `./cuhk.cmd` 和 `./Open-CUHK.cmd`。如 PowerShell 阻止 `npm.ps1`，可改用 `npm.cmd ci` 与 `npm.cmd run build`。
+
+请在 Windows 上重新安装依赖并重新登录，使用本机 Windows 凭据管理器保存加密密钥。不要复制 macOS 的 `node_modules` 或 `.cuhk-data`。这次提供源码启动方式，尚未发布 Windows 安装包；真实 Windows 的登录、凭据保存和界面联动待验证。
+
+Windows 常见问题、更新方法与 CLI / MCP 用法见 [Windows 完整说明](README-CUHK.md#windows-安装与启动)。
 
 ## 数据与查询范围
 

@@ -8,7 +8,7 @@
 
 ### 图形界面
 
-在 Finder 中双击本目录的 **`Open-CUHK.command`** 打开「CUHK · 学习空间」。沿用之前 CLI 保存的授权，启动后自动读取数据。会话过期时，点击左下方「登录 / 重新授权」，在学校窗口完成登录。
+macOS 在 Finder 中双击本目录的 **`Open-CUHK.command`**；Windows 双击 **`Open-CUHK.cmd`** 打开「CUHK · 学习空间」。沿用之前 CLI 保存的授权，启动后自动读取数据。会话过期时，点击左下方「登录 / 重新授权」，在学校窗口完成登录。
 
 - 学习总览：可用课程、截止事件和最新公告。
 - 截止日期：合并待办与日历，显示香港时间，保留来源。仅合并同一课程、相同标题和时间的事件；名称相近的事件仍保留，避免误删。
@@ -19,7 +19,70 @@
 
 图形界面使用本机 Electron，无需网页服务器或额外账号。首次同步可能需要十几秒。遇到网络、权限或授权问题会显示提示。课程资料列表需实际课程验证；当前版本不提供直接下载按钮，可以打开 Blackboard 下载。
 
-### 命令行与授权入口
+### Windows 安装与启动
+
+安装 Git 与 Node.js 24 LTS 后，在命令提示符（CMD）中进入本项目目录：
+
+```bat
+npm ci
+node node_modules/electron/install.js
+npm run build
+Open-CUHK.cmd
+```
+
+- `Open-CUHK.cmd`：双击打开图形界面。
+- `Start-CUHK.cmd`：双击配置 CUHK、完成登录并检查连接。
+- `Check-CUHK.cmd`：双击检查已保存的学校连接。
+- `cuhk.cmd`：命令行入口，无参数时进行 CUHK 配置和登录；例如 `cuhk.cmd --profile cuhk overview --days 7 --fresh`。
+
+PowerShell 中使用 `./Open-CUHK.cmd` 和 `./cuhk.cmd`。若 `npm.ps1` 被执行策略阻止，可使用 `npm.cmd ci` 和 `npm.cmd run build`，无需更改系统执行策略。启动提示缺少 Electron 或构建文件时，请重新执行对应安装或构建步骤。
+
+本机数据默认存于项目 `.cuhk-data`，加密密钥使用 Windows 凭据管理器。若设置了 `CUHK_LMS_HOME`，各 Windows 入口都会沿用该自定义目录；`CUHK_NODE` 可以指定 CLI 使用的 Node 可执行文件路径。换到 Windows 后需重新安装依赖、重新登录，不要直接复制 macOS 的依赖或加密会话。
+
+当前提供源码启动入口，未发布 Windows 安装包。启动流程已进行代码检查，真实 Windows 的界面、学校登录与凭据保存仍待用户验证。
+
+#### Windows 常见问题
+
+| 提示或现象 | 处理方式 |
+| --- | --- |
+| `node`、`npm` 或 `git` 不是内部或外部命令 | 安装对应软件后重新打开终端；用 `node --version`、`npm --version`、`git --version` 检查。Node 应为 24 LTS。 |
+| 提示 `Electron is missing` | 在项目目录运行 `npm ci`，再运行 `node node_modules/electron/install.js`；如下载报错，先检查网络并保留错误信息。 |
+| 提示 `The Dashboard has not been built` | 在项目目录运行 `npm run build`，成功后重新双击 `Open-CUHK.cmd`。 |
+| PowerShell 提示 `npm.ps1` 无法运行 | 使用 `npm.cmd` 替代 `npm`，或按教程使用 CMD。 |
+| 已打开界面，但显示需要登录 / 会话过期 | 点击「登录 / 重新授权」，完成 CUHK 登录和验证后刷新。换电脑需重新登录。 |
+| 提示系统凭据库不可用 | 确认 Windows 凭据管理器可用，并保留报错；程序不会改用明文文件保存密钥。 |
+| 双击后窗口关闭或界面未出现 | 在项目目录的 CMD 中运行 `Open-CUHK.cmd` 查看提示，反馈错误文字与 Node 版本。 |
+
+#### Windows 更新源码
+
+关闭 Dashboard，在项目目录的 CMD 中运行：
+
+```bat
+git pull --ff-only
+npm ci
+node node_modules/electron/install.js
+npm run build
+Open-CUHK.cmd
+```
+
+更新不需要删除 `.cuhk-data`。如果 Git 提示本地修改导致更新失败，请先保存自己的修改，再处理冲突。
+
+#### Windows CLI / MCP
+
+CMD 示例：
+
+```bat
+cuhk.cmd --profile cuhk check
+cuhk.cmd --profile cuhk overview --days 7 --fresh
+cuhk.cmd --profile cuhk blackboard courses
+cuhk.cmd mcp-config
+cuhk.cmd mcp
+```
+
+PowerShell 中把入口写成 `./cuhk.cmd`。`mcp` 会持续运行，关闭终端或按 Ctrl+C 可停止；首次使用先完成学校登录。生成 MCP 配置时，保持 `LMS_HOME` 指向与 Dashboard 相同的本机数据目录。
+
+
+### macOS 命令行与授权入口
 
 在 macOS 双击本目录的 `Start-CUHK.command`，或在本目录终端运行：
 
@@ -51,13 +114,13 @@
 
 ## 本机数据与 MCP
 
-`./cuhk` 将配置、加密会话与缓存放在本项目 `.cuhk-data/`。加密密钥由系统凭据库管理，下载文件为普通文件。该目录已加入 Git 忽略规则，但分享整个项目目录前仍应排除它。
+macOS 的 `./cuhk` 与 Windows 的 `cuhk.cmd` 将配置、加密会话与缓存放在本项目 `.cuhk-data/`。加密密钥由系统凭据库管理，下载文件为普通文件。该目录已加入 Git 忽略规则，但分享整个项目目录前仍应排除它。
 
 启动入口关闭上游更新检查。`./cuhk mcp` 启动 MCP 服务；`./cuhk mcp-config` 生成客户端配置，本次开发不自动改动客户端设置。MCP 配置中的 `LMS_HOME` 与启动入口保持一致。
 
 ## 开发与重新构建
 
-推荐 Node.js 24 LTS。此机器通过被 Git 忽略的 `.cuhk-node` 文件指定现有 Node.js 24 运行时。换电脑后删除该文件以使用 PATH 中的 Node.js，或设置 `CUHK_NODE` 指向所需可执行文件。
+推荐 Node.js 24 LTS。macOS 此机器通过被 Git 忽略的 `.cuhk-node` 文件指定现有 Node.js 24 运行时。Windows 入口使用 PATH 中的 Node.js 或 `CUHK_NODE`，不读取 `.cuhk-node`。换电脑后删除该文件以使用 PATH 中的 Node.js，或设置 `CUHK_NODE` 指向所需可执行文件。
 
 ```sh
 npm ci

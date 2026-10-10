@@ -58,3 +58,11 @@
 外部页面仅通过两个固定资源标识打开，原有 Blackboard 来源链接限制保持不变。自动测试覆盖固定链接解析及拒绝 URL、对象、数组与原型属性输入。类型检查、构建与测试通过：154 项测试，152 通过、2 跳过、无失败。
 
 本机虚构数据预览验证导航、教程布局和两个按钮的资源标识调用，更新 README 新模块截图。未代用户安装学校 App 或验证 App 内的实际导入流程，安装步骤与具体日历选项以学校及 App 当前界面为准。
+
+## Windows 启动入口 — 2026-10-10
+
+新增 Open-CUHK.cmd、Start-CUHK.cmd、Check-CUHK.cmd 与 cuhk.cmd，使用本项目 Windows Electron、构建文件及 Node CLI；路径带引号并禁用延迟扩展，支持含空格的项目路径。各入口沿用项目 .cuhk-data 与 CUHK_LMS_HOME，避免意外切换到默认 CLI 账号。图形入口清除 ELECTRON_RUN_AS_NODE 并检查 Electron 与构建文件，失败时保留提示窗口。
+
+现有授权运行时按 Electron 安装路径发现 Windows 可执行文件；凭据库通过系统 keyring 支持 Windows Credential Manager。无需更改界面或增加明文凭据。
+
+本次在 macOS 检查构建路径、入口参数与文档，并进行类型检查与构建；没有 Windows 运行环境，不能将此记录视为 Windows 实机运行或学校登录成功的证据。
